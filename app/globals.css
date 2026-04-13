@@ -318,6 +318,13 @@ button {
   cursor: pointer;
 }
 
+.primary-button:disabled,
+.secondary-button:disabled,
+.password-toggle:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .secondary-button,
 .table-link {
   border: 1px solid var(--line);

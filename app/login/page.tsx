@@ -5,6 +5,12 @@ import { useRouter } from "next/navigation";
 import { AppLoading } from "@/components/app-loading";
 import { createAdmin, fetchSessionState, login } from "@/lib/api-client";
 
+const MIN_SESSION_CHECK_MS = 700;
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -14,14 +20,17 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [setupRequired, setSetupRequired] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCreatingAdmin, setIsCreatingAdmin] = useState(false);
 
   useEffect(() => {
     let active = true;
 
-    fetchSessionState()
-      .then(({ user, setupRequired: nextSetupRequired }) => {
+    Promise.all([fetchSessionState(), wait(MIN_SESSION_CHECK_MS)])
+      .then(([session]) => {
         if (!active) return;
 
+        const { user, setupRequired: nextSetupRequired } = session;
         if (user) {
           router.replace(user.role === "emp" ? "/reports/new" : "/dashboard");
           return;
@@ -35,7 +44,10 @@ export default function LoginPage() {
           nextError instanceof Error ? nextError.message : "Unable to check session.";
         setError(message);
       })
-      .finally(() => setCheckingSession(false));
+      .finally(() => {
+        if (!active) return;
+        setCheckingSession(false);
+      });
 
     return () => {
       active = false;
@@ -44,7 +56,9 @@ export default function LoginPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSubmitting) return;
     setError("");
+    setIsSubmitting(true);
     try {
       const session = await login(email, password);
       router.replace(session.role === "emp" ? "/reports/new" : "/dashboard");
@@ -52,18 +66,24 @@ export default function LoginPage() {
       const message = error instanceof Error ? error.message : "Login failed.";
       setError(message);
       return;
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
   async function handleAdminSetup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isCreatingAdmin) return;
     setError("");
+    setIsCreatingAdmin(true);
     try {
       const result = await createAdmin({ name, email, password });
       router.replace(result.user.role === "emp" ? "/reports/new" : "/dashboard");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to create admin.";
       setError(message);
+    } finally {
+      setIsCreatingAdmin(false);
     }
   }
 
@@ -84,12 +104,18 @@ export default function LoginPage() {
 
           <label className="stack">
             <span>Admin Name</span>
-            <input value={name} onChange={(event) => setName(event.target.value)} required />
+            <input value={name} onChange={(event) => setName(event.target.value)} required disabled={isCreatingAdmin} />
           </label>
 
           <label className="stack">
             <span>Email</span>
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
+            <input
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              type="email"
+              required
+              disabled={isCreatingAdmin}
+            />
           </label>
 
           <label className="stack">
@@ -100,11 +126,13 @@ export default function LoginPage() {
                 onChange={(event) => setPassword(event.target.value)}
                 type={showPassword ? "text" : "password"}
                 required
+                disabled={isCreatingAdmin}
               />
               <button
                 className="password-toggle"
                 onClick={() => setShowPassword((current) => !current)}
                 type="button"
+                disabled={isCreatingAdmin}
               >
                 {showPassword ? "Hide" : "View"}
               </button>
@@ -112,8 +140,8 @@ export default function LoginPage() {
           </label>
 
           {error ? <p className="error-text">{error}</p> : null}
-          <button className="primary-button" type="submit">
-            Create Admin Account
+          <button className="primary-button" type="submit" disabled={isCreatingAdmin}>
+            {isCreatingAdmin ? "Creating admin..." : "Create Admin Account"}
           </button>
         </form>
       ) : (
@@ -124,7 +152,13 @@ export default function LoginPage() {
 
           <label className="stack">
             <span>Email</span>
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
+            <input
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              type="email"
+              required
+              disabled={isSubmitting}
+            />
           </label>
 
           <label className="stack">
@@ -135,11 +169,13 @@ export default function LoginPage() {
                 onChange={(event) => setPassword(event.target.value)}
                 type={showPassword ? "text" : "password"}
                 required
+                disabled={isSubmitting}
               />
               <button
                 className="password-toggle"
                 onClick={() => setShowPassword((current) => !current)}
                 type="button"
+                disabled={isSubmitting}
               >
                 {showPassword ? "Hide" : "View"}
               </button>
@@ -147,8 +183,8 @@ export default function LoginPage() {
           </label>
 
           {error ? <p className="error-text">{error}</p> : null}
-          <button className="primary-button" type="submit">
-            Login
+          <button className="primary-button" type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Signing in..." : "Login"}
           </button>
         </form>
       )}
