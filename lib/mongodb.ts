@@ -1,4 +1,4 @@
-import { MongoClient } from "mongodb";
+import { MongoClient, ServerApiVersion } from "mongodb";
 
 const uri = process.env.MONGODB_URI;
 
@@ -10,7 +10,15 @@ const globalForMongo = globalThis as typeof globalThis & {
   _mongoClientPromise?: Promise<MongoClient>;
 };
 
-const client = new MongoClient(uri);
+const client = new MongoClient(uri, {
+  appName: "vizva-marketing-reports",
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  },
+  serverSelectionTimeoutMS: 10000,
+});
 const clientPromise = globalForMongo._mongoClientPromise ?? client.connect();
 
 if (process.env.NODE_ENV !== "production") {
