@@ -68,11 +68,16 @@ export async function fetchSession() {
     return cachedUser;
   }
 
-  const response = await fetch("/api/session", { cache: "no-store" });
-  if (!response.ok) return null;
-  const data = await readResponseJson<SessionPayload>(response);
-  writeCachedSession(data.user);
-  return data.user;
+  try {
+    const response = await fetch("/api/session", { cache: "no-store" });
+    if (!response.ok) return null;
+    const data = await readResponseJson<SessionPayload>(response);
+    writeCachedSession(data.user);
+    return data.user;
+  } catch {
+    writeCachedSession(null);
+    return null;
+  }
 }
 
 export async function fetchSessionState() {
@@ -81,23 +86,26 @@ export async function fetchSessionState() {
     return { user: cachedUser, setupRequired: false };
   }
 
-  const response = await fetch("/api/session", { cache: "no-store" });
-  if (response.status === 401) {
+  try {
+    const response = await fetch("/api/session", { cache: "no-store" });
+    if (response.status === 401) {
+      const data = await readResponseJson<SessionPayload>(response);
+      writeCachedSession(null);
+      return { user: null, setupRequired: Boolean(data.setupRequired) };
+    }
+
+    if (!response.ok) {
+      writeCachedSession(null);
+      return { user: null, setupRequired: false };
+    }
+
     const data = await readResponseJson<SessionPayload>(response);
+    writeCachedSession(data.user);
+    return { user: data.user, setupRequired: false };
+  } catch {
     writeCachedSession(null);
-    return { user: null, setupRequired: Boolean(data.setupRequired) };
+    return { user: null, setupRequired: false };
   }
-
-  if (!response.ok) {
-    const data = await readResponseJson<{ error?: string; user?: User | null; setupRequired?: boolean }>(
-      response,
-    );
-    throw new Error(data.error || "Unable to check session.");
-  }
-
-  const data = await readResponseJson<SessionPayload>(response);
-  writeCachedSession(data.user);
-  return { user: data.user, setupRequired: false };
 }
 
 export async function logout() {
