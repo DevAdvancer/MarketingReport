@@ -16,8 +16,12 @@ export default function LoginPage() {
   const [checkingSession, setCheckingSession] = useState(true);
 
   useEffect(() => {
+    let active = true;
+
     fetchSessionState()
       .then(({ user, setupRequired: nextSetupRequired }) => {
+        if (!active) return;
+
         if (user) {
           router.replace(user.role === "emp" ? "/reports/new" : "/dashboard");
           return;
@@ -25,7 +29,17 @@ export default function LoginPage() {
 
         setSetupRequired(nextSetupRequired);
       })
+      .catch((nextError) => {
+        if (!active) return;
+        const message =
+          nextError instanceof Error ? nextError.message : "Unable to check session.";
+        setError(message);
+      })
       .finally(() => setCheckingSession(false));
+
+    return () => {
+      active = false;
+    };
   }, [router]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {

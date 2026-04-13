@@ -9,9 +9,25 @@ import { User } from "@/lib/types";
 
 function DashboardContent({ user }: { user: User }) {
   const [users, setUsers] = useState<User[]>([]);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
-    fetchUsers().then((data) => setUsers(data.users));
+    let active = true;
+
+    fetchUsers()
+      .then((data) => {
+        if (!active) return;
+        setUsers(data.users);
+      })
+      .catch((error) => {
+        if (!active) return;
+        const message = error instanceof Error ? error.message : "Unable to load users.";
+        setLoadError(message);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   if (user.role === "emp") {
@@ -43,6 +59,7 @@ function DashboardContent({ user }: { user: User }) {
 
       <section className="panel">
         <h3>Assigned Team</h3>
+        {loadError ? <p className="error-text">{loadError}</p> : null}
         <div className="table-wrap">
           <table className="app-table">
             <thead>
