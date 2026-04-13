@@ -1,4 +1,4 @@
-import { MongoClient, ServerApiVersion } from "mongodb";
+import mongoose from "mongoose";
 
 const uri = process.env.MONGODB_URI;
 
@@ -6,26 +6,53 @@ if (!uri) {
   throw new Error("Missing MONGODB_URI. Add it to .env.local.");
 }
 
-const globalForMongo = globalThis as typeof globalThis & {
-  _mongoClientPromise?: Promise<MongoClient>;
+const mongoUri = uri;
+
+type MongooseCache = {
+  conn: typeof mongoose | null;
+  promise: Promise<typeof mongoose> | null;
 };
 
-const client = new MongoClient(uri, {
-  appName: "vizva-marketing-reports",
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  },
-  serverSelectionTimeoutMS: 10000,
-});
-const clientPromise = globalForMongo._mongoClientPromise ?? client.connect();
+const globalForMongoose = globalThis as typeof globalThis & {
+  _mongooseCache?: MongooseCache;
+};
 
-if (process.env.NODE_ENV !== "production") {
-  globalForMongo._mongoClientPromise = clientPromise;
+const mongooseCache = globalForMongoose._mongooseCache ?? {
+  conn: null,
+  promise: null,
+};
+
+globalForMongoose._mongooseCache = mongooseCache;
+
+async function connectToDatabase() {
+  if (mongooseCache.conn) {
+    return mongooseCache.conn;
+  }
+
+  if (!mongooseCache.promise) {
+    mongooseCache.promise = mongoose.connect(mongoUri, {
+      dbName: process.env.MONGODB_DB || "vizva-marketing",
+      serverSelectionTimeoutMS: 10000,
+    });
+  }
+
+  try {
+    mongooseCache.conn = await mongooseCache.promise;
+  } catch (error) {
+    mongooseCache.promise = null;
+    throw error;
+  }
+
+  return mongooseCache.conn;
 }
 
 export async function getDb() {
-  const connectedClient = await clientPromise;
-  return connectedClient.db(process.env.MONGODB_DB || "vizva-marketing");
+  const connection = await connectToDatabase();
+  const db = connection.connection.db;
+
+  if (!db) {
+    throw new Error("Mongoose connected without an active database handle.");
+  }
+
+  return db;
 }
