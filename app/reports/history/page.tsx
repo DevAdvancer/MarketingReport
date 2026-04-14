@@ -6,10 +6,10 @@ import { AppShell } from "@/components/app-shell";
 import { AuthGuard } from "@/components/auth-guard";
 import { fetchReports } from "@/lib/api-client";
 import { REPORT_LABELS } from "@/lib/mock-data";
-import { ReportRecord, User } from "@/lib/types";
+import { ReportListItem, User } from "@/lib/types";
 
 function ReportHistoryContent({ user }: { user: User }) {
-  const [reports, setReports] = useState<ReportRecord[]>([]);
+  const [reports, setReports] = useState<ReportListItem[]>([]);
   const [error, setError] = useState("");
 
   useEffect(() => {

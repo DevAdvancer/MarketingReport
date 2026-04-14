@@ -44,3 +44,5 @@ export type ReportRecord = {
   updatedAt: string;
   snapshot: ReportSnapshot;
 };
+
+export type ReportListItem = Omit<ReportRecord, "snapshot">;

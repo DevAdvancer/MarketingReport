@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
-import { findReportById, findUserById, listReports, upsertReport } from "@/lib/data-store";
+import {
+  findReportById,
+  findUserById,
+  listReportSummaries,
+  listUsersByIds,
+  upsertReport,
+} from "@/lib/data-store";
 import { getCurrentUserFromCookie } from "@/lib/auth-server";
 import { canManageUser } from "@/lib/user-service";
-import { ReportRecord, ReportSnapshot, ReportType } from "@/lib/types";
+import { ReportListItem, ReportRecord, ReportSnapshot, ReportType } from "@/lib/types";
 
 function getSnapshotValue(snapshot: ReportSnapshot, ...keys: string[]) {
   for (const key of keys) {
@@ -22,11 +28,13 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const reports = await listReports();
-  const visibleReports: ReportRecord[] = [];
+  const reports = await listReportSummaries();
+  const employees = await listUsersByIds(reports.map((report) => report.employeeId));
+  const employeesById = new Map(employees.map((employee) => [employee.id, employee]));
+  const visibleReports: ReportListItem[] = [];
 
   for (const report of reports) {
-    const employee = await findUserById(report.employeeId);
+    const employee = employeesById.get(report.employeeId);
     if (!employee) continue;
     const managed = canManageUser(currentUser, employee);
     if (canAccessReport(currentUser.id, employee.id, currentUser.role, managed)) {

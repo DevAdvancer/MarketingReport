@@ -8,7 +8,7 @@ import { AuthGuard } from "@/components/auth-guard";
 import { REPORT_LABELS, REPORT_OPTIONS } from "@/lib/mock-data";
 import { getManagedUsers } from "@/lib/rbac";
 import { fetchReports, fetchUsers } from "@/lib/api-client";
-import { ReportRecord, ReportType, User } from "@/lib/types";
+import { ReportListItem, ReportType, User } from "@/lib/types";
 
 function getDefaultReportTypeForDesignation(designation: string | undefined) {
   const normalizedDesignation = (designation || "").toLowerCase();
@@ -26,7 +26,7 @@ function getDefaultReportTypeForDesignation(designation: string | undefined) {
 function NewReportContent({ user }: { user: User }) {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
-  const [reports, setReports] = useState<ReportRecord[]>([]);
+  const [reports, setReports] = useState<ReportListItem[]>([]);
 
   useEffect(() => {
     fetchUsers().then((data) => setUsers(data.users));

@@ -1,4 +1,4 @@
-import { DbUser, ReportRecord } from "@/lib/types";
+import { DbUser, ReportListItem, ReportRecord } from "@/lib/types";
 import { getDb } from "@/lib/mongodb";
 
 type MemoryStore = {
@@ -9,6 +9,7 @@ type MemoryStore = {
 const globalForStore = globalThis as typeof globalThis & {
   _vizvaMemoryStore?: MemoryStore;
   _vizvaUsingMemoryStore?: boolean;
+  _vizvaCollectionsPromise?: Promise<void> | null;
 };
 
 const memoryStore = globalForStore._vizvaMemoryStore ?? {
@@ -20,10 +21,23 @@ globalForStore._vizvaMemoryStore = memoryStore;
 
 async function ensureCollections() {
   const db = await getDb();
-  await db.collection<DbUser>("users").createIndex({ id: 1 }, { unique: true });
-  await db.collection<DbUser>("users").createIndex({ email: 1 }, { unique: true });
-  await db.collection<ReportRecord>("reports").createIndex({ id: 1 }, { unique: true });
-  await db.collection<ReportRecord>("reports").createIndex({ employeeId: 1, updatedAt: -1 });
+
+  if (!globalForStore._vizvaCollectionsPromise) {
+    globalForStore._vizvaCollectionsPromise = Promise.all([
+      db.collection<DbUser>("users").createIndex({ id: 1 }, { unique: true }),
+      db.collection<DbUser>("users").createIndex({ email: 1 }, { unique: true }),
+      db.collection<ReportRecord>("reports").createIndex({ id: 1 }, { unique: true }),
+      db.collection<ReportRecord>("reports").createIndex({ employeeId: 1, updatedAt: -1 }),
+    ]).then(() => undefined);
+  }
+
+  try {
+    await globalForStore._vizvaCollectionsPromise;
+  } catch (error) {
+    globalForStore._vizvaCollectionsPromise = null;
+    throw error;
+  }
+
   return db;
 }
 
@@ -55,7 +69,7 @@ export async function hasUsers() {
   return withStoreFallback(
     async () => {
       const db = await ensureCollections();
-      return (await db.collection<DbUser>("users").countDocuments()) > 0;
+      return (await db.collection<DbUser>("users").findOne({}, { projection: { _id: 1 } })) !== null;
     },
     () => memoryStore.users.length > 0,
   );
@@ -78,6 +92,21 @@ export async function findUserByEmail(email: string) {
       return db.collection<DbUser>("users").findOne({ email: { $regex: `^${email}$`, $options: "i" } });
     },
     () => memoryStore.users.find((user) => user.email.toLowerCase() === email.toLowerCase()) ?? null,
+  );
+}
+
+export async function listUsersByIds(userIds: string[]) {
+  const uniqueIds = [...new Set(userIds.filter(Boolean))];
+  if (!uniqueIds.length) {
+    return [] as DbUser[];
+  }
+
+  return withStoreFallback(
+    async () => {
+      const db = await ensureCollections();
+      return db.collection<DbUser>("users").find({ id: { $in: uniqueIds } }).toArray();
+    },
+    () => memoryStore.users.filter((user) => uniqueIds.includes(user.id)),
   );
 }
 
@@ -110,7 +139,7 @@ export async function createInitialAdmin(user: DbUser) {
     async () => {
       const db = await ensureCollections();
       const usersCollection = db.collection<DbUser>("users");
-      if ((await usersCollection.countDocuments()) > 0) {
+      if ((await usersCollection.findOne({}, { projection: { _id: 1 } })) !== null) {
         throw new Error("Setup has already been completed.");
       }
 
@@ -135,6 +164,30 @@ export async function listReports() {
       return db.collection<ReportRecord>("reports").find({}).sort({ updatedAt: -1 }).toArray();
     },
     () => [...memoryStore.reports].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+  );
+}
+
+export async function listReportSummaries() {
+  return withStoreFallback(
+    async () => {
+      const db = await ensureCollections();
+      return db
+        .collection<ReportRecord>("reports")
+        .find(
+          {},
+          {
+            projection: {
+              snapshot: 0,
+            },
+          },
+        )
+        .sort({ updatedAt: -1 })
+        .toArray() as Promise<ReportListItem[]>;
+    },
+    () =>
+      [...memoryStore.reports]
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .map(({ snapshot: _snapshot, ...report }) => report),
   );
 }
 

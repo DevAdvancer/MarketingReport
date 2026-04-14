@@ -1,6 +1,6 @@
 "use client";
 
-import { ReportRecord, ReportSnapshot, ReportType, User } from "@/lib/types";
+import { ReportListItem, ReportRecord, ReportSnapshot, ReportType, User } from "@/lib/types";
 
 type SessionPayload = {
   user: User | null;
@@ -165,11 +165,11 @@ export async function createAdmin(payload: { name: string; email: string; passwo
 
 export async function fetchReports() {
   const response = await fetch("/api/reports", { cache: "no-store" });
-  const data = await readResponseJson<{ error?: string; reports?: ReportRecord[] }>(response);
+  const data = await readResponseJson<{ error?: string; reports?: ReportListItem[] }>(response);
   if (!response.ok) {
     throw new Error(data.error || "Unable to load reports.");
   }
-  return data as { reports: ReportRecord[] };
+  return data as { reports: ReportListItem[] };
 }
 
 export async function fetchReport(reportId: string) {
