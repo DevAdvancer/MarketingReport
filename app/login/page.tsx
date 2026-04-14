@@ -5,12 +5,6 @@ import { useRouter } from "next/navigation";
 import { AppLoading } from "@/components/app-loading";
 import { createAdmin, fetchSessionState, login } from "@/lib/api-client";
 
-const MIN_SESSION_CHECK_MS = 700;
-
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -26,8 +20,8 @@ export default function LoginPage() {
   useEffect(() => {
     let active = true;
 
-    Promise.all([fetchSessionState(), wait(MIN_SESSION_CHECK_MS)])
-      .then(([session]) => {
+    fetchSessionState()
+      .then((session) => {
         if (!active) return;
 
         const { user, setupRequired: nextSetupRequired } = session;

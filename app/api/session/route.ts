@@ -5,10 +5,10 @@ import { ensureSeededUsers, setupCompleted } from "@/lib/user-service";
 
 export async function GET() {
   try {
-    await ensureSeededUsers();
     const user = await getCurrentUserFromCookie();
 
     if (!user) {
+      await ensureSeededUsers();
       return NextResponse.json({ user: null, setupRequired: !(await setupCompleted()) }, { status: 401 });
     }
 

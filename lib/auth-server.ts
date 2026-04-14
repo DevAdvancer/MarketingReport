@@ -1,9 +1,23 @@
 import { cookies } from "next/headers";
 import { createHmac, scryptSync, timingSafeEqual } from "node:crypto";
 import { findUserById } from "@/lib/data-store";
+import { User } from "@/lib/types";
 
 const COOKIE_NAME = "vizva_session";
 const SESSION_SECRET = process.env.SESSION_SECRET || "vizva-dev-secret";
+const USER_CACHE_TTL_MS = 1000 * 60 * 5;
+
+type CachedUser = {
+  user: User;
+  expiresAt: number;
+};
+
+const globalForAuth = globalThis as typeof globalThis & {
+  _vizvaSessionUserCache?: Map<string, CachedUser>;
+};
+
+const sessionUserCache = globalForAuth._vizvaSessionUserCache ?? new Map<string, CachedUser>();
+globalForAuth._vizvaSessionUserCache = sessionUserCache;
 
 export function hashPassword(password: string) {
   return password;
@@ -45,10 +59,26 @@ export async function getCurrentUserFromCookie() {
   const userId = parseSessionValue(session);
   if (!userId) return null;
 
+  const cached = sessionUserCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.user;
+  }
+
+  if (cached) {
+    sessionUserCache.delete(userId);
+  }
+
   const user = await findUserById(userId);
-  if (!user) return null;
+  if (!user) {
+    sessionUserCache.delete(userId);
+    return null;
+  }
 
   const { passwordHash: _passwordHash, ...safeUser } = user;
+  sessionUserCache.set(userId, {
+    user: safeUser,
+    expiresAt: Date.now() + USER_CACHE_TTL_MS,
+  });
   return safeUser;
 }
 
@@ -65,5 +95,10 @@ export async function setSessionCookie(userId: string) {
 
 export async function clearSessionCookie() {
   const cookieStore = await cookies();
+  const session = cookieStore.get(COOKIE_NAME)?.value;
+  const userId = parseSessionValue(session);
+  if (userId) {
+    sessionUserCache.delete(userId);
+  }
   cookieStore.delete(COOKIE_NAME);
 }
