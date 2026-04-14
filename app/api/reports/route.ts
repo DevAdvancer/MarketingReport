@@ -3,12 +3,13 @@ import {
   findReportById,
   findUserById,
   listReportSummaries,
-  listUsersByIds,
+  listReportSummariesForEmployees,
+  listUsersManagedBy,
   upsertReport,
 } from "@/lib/data-store";
 import { getCurrentUserFromCookie } from "@/lib/auth-server";
 import { canManageUser } from "@/lib/user-service";
-import { ReportListItem, ReportRecord, ReportSnapshot, ReportType } from "@/lib/types";
+import { ReportRecord, ReportSnapshot, ReportType } from "@/lib/types";
 
 function getSnapshotValue(snapshot: ReportSnapshot, ...keys: string[]) {
   for (const key of keys) {
@@ -28,21 +29,19 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const reports = await listReportSummaries();
-  const employees = await listUsersByIds(reports.map((report) => report.employeeId));
-  const employeesById = new Map(employees.map((employee) => [employee.id, employee]));
-  const visibleReports: ReportListItem[] = [];
-
-  for (const report of reports) {
-    const employee = employeesById.get(report.employeeId);
-    if (!employee) continue;
-    const managed = canManageUser(currentUser, employee);
-    if (canAccessReport(currentUser.id, employee.id, currentUser.role, managed)) {
-      visibleReports.push(report);
-    }
+  if (currentUser.role === "admin") {
+    const reports = await listReportSummaries();
+    return NextResponse.json({ reports });
   }
 
-  return NextResponse.json({ reports: visibleReports });
+  const managedUsers = await listUsersManagedBy(currentUser.id);
+  const employeeIds = managedUsers.map((u) => u.id);
+  if (!employeeIds.includes(currentUser.id)) {
+    employeeIds.push(currentUser.id);
+  }
+
+  const reports = await listReportSummariesForEmployees(employeeIds);
+  return NextResponse.json({ reports });
 }
 
 export async function POST(request: Request) {

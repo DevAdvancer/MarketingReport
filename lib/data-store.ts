@@ -89,6 +89,11 @@ export async function findUserByEmail(email: string) {
   return withStoreFallback(
     async () => {
       const db = await ensureCollections();
+      // Fast path: Exact match uses the unique index
+      const exactMatch = await db.collection<DbUser>("users").findOne({ email });
+      if (exactMatch) return exactMatch;
+      
+      // Slow path: Case-insensitive scan
       return db.collection<DbUser>("users").findOne({ email: { $regex: `^${email}$`, $options: "i" } });
     },
     () => memoryStore.users.find((user) => user.email.toLowerCase() === email.toLowerCase()) ?? null,
@@ -107,6 +112,28 @@ export async function listUsersByIds(userIds: string[]) {
       return db.collection<DbUser>("users").find({ id: { $in: uniqueIds } }).toArray();
     },
     () => memoryStore.users.filter((user) => uniqueIds.includes(user.id)),
+  );
+}
+
+export async function listUsersManagedBy(managerId: string) {
+  return withStoreFallback(
+    async () => {
+      const db = await ensureCollections();
+      return db.collection<DbUser>("users").find({
+        $or: [
+          { managerId },
+          { assistantManagerId: managerId },
+          { teamLeadId: managerId },
+          { createdById: managerId },
+        ],
+      }).toArray();
+    },
+    () => memoryStore.users.filter(user => 
+      user.managerId === managerId || 
+      user.assistantManagerId === managerId || 
+      user.teamLeadId === managerId || 
+      user.createdById === managerId
+    ),
   );
 }
 
@@ -186,6 +213,32 @@ export async function listReportSummaries() {
     },
     () =>
       [...memoryStore.reports]
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .map(({ snapshot: _snapshot, ...report }) => report),
+  );
+}
+
+export async function listReportSummariesForEmployees(employeeIds: string[]) {
+  if (!employeeIds.length) return [];
+  return withStoreFallback(
+    async () => {
+      const db = await ensureCollections();
+      return db
+        .collection<ReportRecord>("reports")
+        .find(
+          { employeeId: { $in: employeeIds } },
+          {
+            projection: {
+              snapshot: 0,
+            },
+          },
+        )
+        .sort({ updatedAt: -1 })
+        .toArray() as Promise<ReportListItem[]>;
+    },
+    () =>
+      [...memoryStore.reports]
+        .filter(report => employeeIds.includes(report.employeeId))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
         .map(({ snapshot: _snapshot, ...report }) => report),
   );
