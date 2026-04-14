@@ -2,6 +2,40 @@
 
 import { ReportListItem, ReportRecord, ReportSnapshot, ReportType, User } from "@/lib/types";
 
+// ---------------------------------------------------------------------------
+// Generic in-memory cache with request de-duplication
+// ---------------------------------------------------------------------------
+type CacheEntry<T> = { value: T; expiresAt: number };
+const _cache = new Map<string, CacheEntry<unknown>>();
+const _inflight = new Map<string, Promise<unknown>>();
+const DATA_CACHE_TTL_MS = 1000 * 30; // 30 seconds
+
+async function cachedFetch<T>(cacheKey: string, fn: () => Promise<T>): Promise<T> {
+  // Return still-valid cached value immediately
+  const hit = _cache.get(cacheKey) as CacheEntry<T> | undefined;
+  if (hit && hit.expiresAt > Date.now()) return hit.value;
+
+  // De-duplicate: if a request is already in-flight, wait for it
+  if (_inflight.has(cacheKey)) return _inflight.get(cacheKey) as Promise<T>;
+
+  const promise = fn().then((value) => {
+    _cache.set(cacheKey, { value, expiresAt: Date.now() + DATA_CACHE_TTL_MS });
+    _inflight.delete(cacheKey);
+    return value;
+  }).catch((err) => {
+    _inflight.delete(cacheKey);
+    throw err;
+  });
+
+  _inflight.set(cacheKey, promise);
+  return promise;
+}
+
+/** Invalidate a cache key (call after mutations) */
+export function invalidateCache(cacheKey: string) {
+  _cache.delete(cacheKey);
+}
+
 type SessionPayload = {
   user: User | null;
   setupRequired?: boolean;
@@ -127,13 +161,15 @@ export async function login(email: string, password: string) {
 }
 
 export async function fetchUsers() {
-  const response = await fetch("/api/users", { cache: "no-store" });
-  const data = await readResponseJson<{ error?: string; currentUser?: User; users?: User[] }>(response);
-  if (!response.ok) {
-    throw new Error(data.error || "Unable to load users.");
-  }
-  writeCachedSession(data.currentUser);
-  return data as { currentUser: User; users: User[] };
+  return cachedFetch("users", async () => {
+    const response = await fetch("/api/users", { cache: "no-store" });
+    const data = await readResponseJson<{ error?: string; currentUser?: User; users?: User[] }>(response);
+    if (!response.ok) {
+      throw new Error(data.error || "Unable to load users.");
+    }
+    writeCachedSession(data.currentUser);
+    return data as { currentUser: User; users: User[] };
+  });
 }
 
 export async function createUser(payload: Record<string, string>) {
@@ -164,12 +200,14 @@ export async function createAdmin(payload: { name: string; email: string; passwo
 }
 
 export async function fetchReports() {
-  const response = await fetch("/api/reports", { cache: "no-store" });
-  const data = await readResponseJson<{ error?: string; reports?: ReportListItem[] }>(response);
-  if (!response.ok) {
-    throw new Error(data.error || "Unable to load reports.");
-  }
-  return data as { reports: ReportListItem[] };
+  return cachedFetch("reports", async () => {
+    const response = await fetch("/api/reports", { cache: "no-store" });
+    const data = await readResponseJson<{ error?: string; reports?: ReportListItem[] }>(response);
+    if (!response.ok) {
+      throw new Error(data.error || "Unable to load reports.");
+    }
+    return data as { reports: ReportListItem[] };
+  });
 }
 
 export async function fetchReport(reportId: string) {
@@ -187,6 +225,8 @@ export async function saveReport(payload: {
   employeeId: string;
   snapshot: ReportSnapshot;
 }) {
+  // Invalidate so the history list re-fetches fresh data after a save
+  invalidateCache("reports");
   const response = await fetch("/api/reports", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
