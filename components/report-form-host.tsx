@@ -100,8 +100,20 @@ export function ReportFormHost({ htmlPath, onReady }: ReportFormHostProps) {
         root.classList.add("report-template-host");
 
         if (scriptText.trim()) {
+          // Extract function names to expose them to the window
+          // so inline HTML event handlers (like oninput="calcKPI()") can find them.
+          const functionRegex = /function\s+([a-zA-Z0-9_]+)\s*\(/g;
+          let match;
+          const functionNames: string[] = [];
+          while ((match = functionRegex.exec(scriptText)) !== null) {
+            functionNames.push(match[1]);
+          }
+          const attachToWindow = functionNames
+            .map((name) => `if (typeof ${name} === 'function') window.${name} = ${name};`)
+            .join("\n");
+
           // Run the original report behavior after the form markup has mounted.
-          new Function(scriptText)();
+          new Function(`${scriptText}\n\n${attachToWindow}`)();
           window.dispatchEvent(new Event("load"));
         }
 
